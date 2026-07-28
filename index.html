@@ -18,16 +18,17 @@
   <meta property="og:description" content="Crie seu post personalizado do 2º Seminário Prático Penal. Envie sua foto e baixe em alta definição para Instagram e WhatsApp." />
   <meta property="og:url" content="https://cora-devops.vercel.app/" />
   <meta property="og:site_name" content="Seminário Prático Penal 2026" />
-  <meta property="og:image" content="background.jpg" />
+  <meta property="og:image" content="og-image.jpg" />
+  <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="1500" />
-  <meta property="og:image:alt" content="2ª Edição Seminário Prático Penal Sul Capixaba 2026" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Seminário Prático Penal Sul Capixaba 2026 - Compartilhe sua presença em nosso evento!" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Seminário Prático Penal Sul Capixaba 2026 | #EUVOU" />
   <meta name="twitter:description" content="Crie seu post personalizado. Envie sua foto e baixe em alta definição." />
-  <meta name="twitter:image" content="background.jpg" />
+  <meta name="twitter:image" content="og-image.jpg" />
 
   <!-- Favicons -->
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -85,7 +86,7 @@
       position: relative;
       width: 100%;
       max-width: min(420px, 94vw);
-      aspect-ratio: 3277 / 4096;
+      aspect-ratio: 1199 / 1500;
       box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.7);
       border-radius: 6px;
       overflow: hidden;
@@ -608,13 +609,30 @@
           out.width = targetW;
           out.height = targetH;
           var ctx = out.getContext('2d');
+          // Fundo azul do evento
           ctx.fillStyle = '#0a1628';
           ctx.fillRect(0, 0, targetW, targetH);
 
           var sw = sourceCanvas.width, sh = sourceCanvas.height;
-          var scaleCover = Math.max(targetW / sw, targetH / sh);
-          var dw = sw * scaleCover, dh = sh * scaleCover;
-          var dx = (targetW - dw) / 2, dy = (targetH - dh) / 2;
+          var dw, dh, dx, dy;
+
+          if (mode === 'story') {
+            // Story 9:16: CABE A ARTE INTEIRA (contain) — sem zoom/corte
+            // Centraliza verticalmente com faixas do fundo nas bordas
+            var scaleContain = Math.min(targetW / sw, targetH / sh);
+            dw = sw * scaleContain;
+            dh = sh * scaleContain;
+            dx = (targetW - dw) / 2;
+            dy = (targetH - dh) / 2;
+          } else {
+            // Feed 4:5: proporção quase igual à arte — preenche sem zoom extra
+            // Usa contain também se a diferença for mínima; senão cover suave
+            var scaleFit = Math.min(targetW / sw, targetH / sh);
+            dw = sw * scaleFit;
+            dh = sh * scaleFit;
+            dx = (targetW - dw) / 2;
+            dy = (targetH - dh) / 2;
+          }
           ctx.drawImage(sourceCanvas, dx, dy, dw, dh);
 
           var link = document.createElement('a');
@@ -711,12 +729,7 @@
             ),
             h('div', { className: 'hashtag-outline', 'aria-hidden': 'true' }, '#EUVOU'),
             h('div', { className: 'hashtag' }, '#EUVOU'),
-            h('div', { className: 'footer-bar' },
-              h('div', { className: 'footer-item' }, h(CalendarIcon), h('span', null, '21 E 22 DE AGOSTO DE 2026')),
-              h('div', { className: 'footer-divider' }),
-              h('div', { className: 'footer-item' }, h(LocationIcon), h('span', null, 'CACHOEIRO DE ITAPEMIRIM-ES'))
-            ),
-            exporting ? h('div', { className: 'exporting-overlay' },
+                        exporting ? h('div', { className: 'exporting-overlay' },
               h('div', null, h('div', { className: 'spinner' }), h('p', null, 'Gerando seu post...'))
             ) : null
           )

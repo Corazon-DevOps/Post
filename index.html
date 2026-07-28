@@ -25,6 +25,33 @@
       color: #fff;
       -webkit-font-smoothing: antialiased;
     }
+
+    /* BANNER DE AVISO PARA INSTAGRAM */
+    .ig-warning-banner {
+      background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+      color: #fff;
+      padding: 12px 16px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      position: sticky;
+      top: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .ig-warning-banner span {
+      line-height: 1.4;
+    }
+    .ig-warning-banner strong {
+      text-decoration: underline;
+      color: #fff;
+    }
+
     .page {
       min-height: 100vh;
       display: flex;
@@ -173,13 +200,13 @@
       transition: bottom 0.3s ease;
     }
 
-    /* POSIÇÃO CORRIGIDA NO FEED (MAIS ABAIXO) */
+    /* POSIÇÃO FEED (MAIS ABAIXO) */
     .card-feed .hashtag-outline,
     .card-feed .hashtag {
       bottom: 11%;
     }
 
-    /* POSIÇÃO NO STORY (MAIS ALTA) */
+    /* POSIÇÃO STORY (MAIS ALTA) */
     .card-story .hashtag-outline,
     .card-story .hashtag {
       bottom: 27.2%;
@@ -230,6 +257,7 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .exporting-overlay p { font-weight: 600; font-size: 14px; text-align: center; }
+    
     .controls {
       width: 100%;
       max-width: 420px;
@@ -433,12 +461,78 @@
       z-index: 35;
       display: block;
     }
+
+    /* MODAL DE RESULTADO PARA SALVAR NO INSTAGRAM */
+    .image-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      backdrop-filter: blur(5px);
+    }
+    .image-modal-content {
+      max-width: 100%;
+      max-height: 75vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .image-modal-content img {
+      max-width: 100%;
+      max-height: 65vh;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      border: 2px solid #d4af37;
+    }
+    .image-modal-instruction {
+      margin-top: 14px;
+      text-align: center;
+      color: #facc15;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+      background: rgba(250, 204, 21, 0.1);
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px dashed rgba(250, 204, 21, 0.4);
+    }
+    .image-modal-close {
+      margin-top: 16px;
+      background: #334155;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 20px;
+      font-weight: 700;
+      cursor: pointer;
+    }
   </style>
+
+  <!-- SCRIPT DE TRATAMENTO AUTO PARA INSTAGRAM -->
+  <script>
+    (function() {
+      var ua = navigator.userAgent || navigator.vendor || window.opera;
+      var isInstagram = ua.indexOf('Instagram') > -1;
+      var isAndroid = /Android/i.test(ua);
+
+      // Se for Android dentro do Instagram, força abrir diretamente no Google Chrome
+      if (isInstagram && isAndroid) {
+        var currentUrl = window.location.href.replace(/^https?:\/\//, '');
+        window.location.href = 'intent://' + currentUrl + '#Intent;scheme=https;package=com.android.chrome;end';
+      }
+    })();
+  </script>
 </head>
 <body>
   <div id="root"></div>
+
   <script>
-    const { useState, useRef, useCallback, createElement: h } = React;
+    const { useState, useRef, useCallback, useEffect, createElement: h } = React;
 
     function CameraIcon() {
       return h('svg', { xmlns: 'http://www.w3.org/2000/svg', fill: 'none', viewBox: '0 0 24 24', strokeWidth: 1.5, stroke: 'currentColor' },
@@ -464,8 +558,21 @@
       const [exporting, setExporting] = useState(false);
       const [processing, setProcessing] = useState(false);
       const [error, setError] = useState(null);
+      
+      const [isInstagramIos, setIsInstagramIos] = useState(false);
+      const [generatedImageModal, setGeneratedImageModal] = useState(null);
+
       const cardRef = useRef(null);
       const fileInputRef = useRef(null);
+
+      useEffect(function() {
+        var ua = navigator.userAgent || navigator.vendor || window.opera;
+        var isIg = ua.indexOf('Instagram') > -1;
+        var isIos = /iPhone|iPad|iPod/i.test(ua);
+        if (isIg && isIos) {
+          setIsInstagramIos(true);
+        }
+      }, []);
 
       const handleFileChange = function(e) {
         var inputEl = e.target;
@@ -562,13 +669,23 @@
             }
           });
 
-          var fileSuffix = mode === 'story' ? 'story' : 'feed';
-          var link = document.createElement('a');
-          link.download = 'meu-post-seminario-penal-' + fileSuffix + '.png';
-          link.href = sourceCanvas.toDataURL('image/png', 1.0);
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
+          var dataUrl = sourceCanvas.toDataURL('image/png', 1.0);
+          var ua = navigator.userAgent || navigator.vendor || window.opera;
+          var isInAppBrowser = ua.indexOf('Instagram') > -1 || ua.indexOf('FBAN') > -1 || ua.indexOf('FBAV') > -1;
+
+          // Se estiver navegando no Instagram/Facebook, abre modal para salvar
+          if (isInAppBrowser) {
+            setGeneratedImageModal(dataUrl);
+          } else {
+            // Se estiver em navegador padrão (Chrome/Safari), faz o download direto
+            var fileSuffix = mode === 'story' ? 'story' : 'feed';
+            var link = document.createElement('a');
+            link.download = 'meu-post-seminario-penal-' + fileSuffix + '.png';
+            link.href = dataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
         } catch (err) {
           console.error(err);
           setError('Erro ao gerar a imagem. Tente novamente.');
@@ -643,106 +760,126 @@
             style: { cursor: 'pointer' }
           }, 'Enviar Foto');
 
-      return h('div', { className: 'page' },
-        h('div', { className: 'header' },
-          h('h1', null, 'Crie seu Post Personalizado'),
-          h('p', null, '2ª Edição • Seminário Prático Penal Sul Capixaba 2026')
-        ),
-        h('div', { className: 'card-wrap' },
-          h('div', {
-            ref: cardRef,
-            className: 'card-container' + (previewMode === 'story' ? ' card-story' : ' card-feed'),
-            style: {
-              aspectRatio: previewMode === 'story' ? '9 / 16' : '1080 / 1350',
-              backgroundImage: previewMode === 'story'
-                ? "url('background-story-1080.jpg')"
-                : "url('background.jpg')"
-            }
-          },
-            h('img', {
-              src: previewMode === 'story' ? 'background-story-1080.jpg' : 'background.jpg',
-              alt: '',
-              className: 'bg-image',
-              draggable: false,
-              onError: function(e) {
-                e.target.style.display = 'none';
-              }
-            }),
+      return h('div', null,
+        // Banner Guia para quem acessa no Instagram no iOS
+        isInstagramIos ? h('div', { className: 'ig-warning-banner' },
+          h('span', null, '📌 Para melhor experiência no Instagram: toque nos <strong>3 pontinhos (...)</strong> no canto superior e escolha <strong>"Abrir no Safari"</strong>.')
+        ) : null,
+
+        h('div', { className: 'page' },
+          h('div', { className: 'header' },
+            h('h1', null, 'Crie seu Post Personalizado'),
+            h('p', null, '2ª Edição • Seminário Prático Penal Sul Capixaba 2026')
+          ),
+          h('div', { className: 'card-wrap' },
             h('div', {
-              className: 'photo-frame',
-              role: photoUrl ? 'img' : 'button',
-              'aria-label': photoUrl ? 'Área da foto' : 'Toque para enviar sua foto'
+              ref: cardRef,
+              className: 'card-container' + (previewMode === 'story' ? ' card-story' : ' card-feed'),
+              style: {
+                aspectRatio: previewMode === 'story' ? '9 / 16' : '1080 / 1350',
+                backgroundImage: previewMode === 'story'
+                  ? "url('background-story-1080.jpg')"
+                  : "url('background.jpg')"
+              }
             },
-              photoContent,
-              !photoUrl ? h('label', {
-                htmlFor: 'photo-upload-input',
-                className: 'photo-label',
-                'aria-hidden': true
-              }) : null
-            ),
-            h('div', { className: 'hashtag-outline' }, '#EUVOU'),
-            h('div', { className: 'hashtag' }, '#EUVOU'),
+              h('img', {
+                src: previewMode === 'story' ? 'background-story-1080.jpg' : 'background.jpg',
+                alt: '',
+                className: 'bg-image',
+                draggable: false,
+                onError: function(e) {
+                  e.target.style.display = 'none';
+                }
+              }),
+              h('div', {
+                className: 'photo-frame',
+                role: photoUrl ? 'img' : 'button',
+                'aria-label': photoUrl ? 'Área da foto' : 'Toque para enviar sua foto'
+              },
+                photoContent,
+                !photoUrl ? h('label', {
+                  htmlFor: 'photo-upload-input',
+                  className: 'photo-label',
+                  'aria-hidden': true
+                }) : null
+              ),
+              h('div', { className: 'hashtag-outline' }, '#EUVOU'),
+              h('div', { className: 'hashtag' }, '#EUVOU'),
 
-            exporting ? h('div', { className: 'exporting-overlay' },
-              h('div', { className: 'spinner' }),
-              h('p', null, 'Gerando imagem em alta resolução...')
-            ) : null
+              exporting ? h('div', { className: 'exporting-overlay' },
+                h('div', { className: 'spinner' }),
+                h('p', null, 'Gerando imagem em alta resolução...')
+              ) : null
+            )
+          ),
+
+          h('input', {
+            id: 'photo-upload-input',
+            ref: fileInputRef,
+            type: 'file',
+            accept: 'image/*,.heic,.heif',
+            className: 'hidden-input',
+            onChange: handleFileChange
+          }),
+
+          h('div', { className: 'controls' },
+            error ? h('div', { className: 'error-box' }, error) : null,
+            
+            adjustPanel,
+
+            h('div', { className: 'mode-toggle' },
+              h('button', {
+                className: 'mode-btn' + (previewMode === 'feed' ? ' mode-btn-active' : ''),
+                type: 'button',
+                onClick: function() { setPreviewMode('feed'); }
+              }, 'Formato Feed (4:5)'),
+              h('button', {
+                className: 'mode-btn' + (previewMode === 'story' ? ' mode-btn-active' : ''),
+                type: 'button',
+                onClick: function() { setPreviewMode('story'); }
+              }, 'Formato Story (9:16)')
+            ),
+
+            h('div', { className: 'btn-row' },
+              h('button', {
+                className: 'btn-primary' + (previewMode === 'story' ? ' btn-story' : ''),
+                type: 'button',
+                disabled: !photoUrl || exporting,
+                onClick: function() { handleDownload(previewMode); }
+              },
+                h(DownloadIcon),
+                exporting ? 'Aguarde...' : ('Baixar Post (' + (previewMode === 'story' ? 'Story' : 'Feed') + ')')
+              ),
+              secondaryBtn
+            ),
+
+            h('p', { className: 'privacy-note' },
+              'Sua foto é processada com total segurança diretamente no seu dispositivo.'
+            ),
+            h('div', { className: 'dev-credit' },
+              'Desenvolvido por ',
+              h('a', {
+                href: 'https://cora-devops.vercel.app/',
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                className: 'dev-link'
+              }, 'Cora DevOps')
+            )
           )
         ),
 
-        h('input', {
-          id: 'photo-upload-input',
-          ref: fileInputRef,
-          type: 'file',
-          accept: 'image/*,.heic,.heif',
-          className: 'hidden-input',
-          onChange: handleFileChange
-        }),
-
-        h('div', { className: 'controls' },
-          error ? h('div', { className: 'error-box' }, error) : null,
-          
-          adjustPanel,
-
-          h('div', { className: 'mode-toggle' },
+        // MODAL QUE APARECE PARA SALVAR QUANDO ESTIVER NO NAVEGADOR DO INSTAGRAM
+        generatedImageModal ? h('div', { className: 'image-modal-overlay' },
+          h('div', { className: 'image-modal-content' },
+            h('img', { src: generatedImageModal, alt: 'Post Gerado' }),
+            h('p', { className: 'image-modal-instruction' }, '👆 Pressione e segure na imagem acima para salvá-la na sua galeria!'),
             h('button', {
-              className: 'mode-btn' + (previewMode === 'feed' ? ' mode-btn-active' : ''),
+              className: 'image-modal-close',
               type: 'button',
-              onClick: function() { setPreviewMode('feed'); }
-            }, 'Formato Feed (4:5)'),
-            h('button', {
-              className: 'mode-btn' + (previewMode === 'story' ? ' mode-btn-active' : ''),
-              type: 'button',
-              onClick: function() { setPreviewMode('story'); }
-            }, 'Formato Story (9:16)')
-          ),
-
-          h('div', { className: 'btn-row' },
-            h('button', {
-              className: 'btn-primary' + (previewMode === 'story' ? ' btn-story' : ''),
-              type: 'button',
-              disabled: !photoUrl || exporting,
-              onClick: function() { handleDownload(previewMode); }
-            },
-              h(DownloadIcon),
-              exporting ? 'Aguarde...' : ('Baixar Post (' + (previewMode === 'story' ? 'Story' : 'Feed') + ')')
-            ),
-            secondaryBtn
-          ),
-
-          h('p', { className: 'privacy-note' },
-            'Sua foto é processada com total segurança diretamente no seu dispositivo.'
-          ),
-          h('div', { className: 'dev-credit' },
-            'Desenvolvido por ',
-            h('a', {
-              href: 'https://cora-devops.vercel.app/',
-              target: '_blank',
-              rel: 'noopener noreferrer',
-              className: 'dev-link'
-            }, 'Cora DevOps')
+              onClick: function() { setGeneratedImageModal(null); }
+            }, 'Fechar')
           )
-        )
+        ) : null
       );
     }
 

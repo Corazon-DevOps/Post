@@ -101,7 +101,7 @@
       align-items: center;
       justify-content: center;
     }
-    /* Moldura no Story */
+
     .card-story .photo-frame {
       top: 23.5%;
       left: 16.5%;
@@ -114,17 +114,17 @@
         inset 0 0 10px rgba(0,0,0,0.2);
     }
     
-    /* PREENCHIMENTO INTELIGENTE: ocupa 100% da área do círculo por padrão */
+    /* IMAGEM ORIGINAL PRESERVADA COM OBJECT-FIT COVER */
     .user-photo-img {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      object-position: center center;
       display: block;
       pointer-events: none;
       user-select: none;
       image-rendering: -webkit-optimize-contrast;
       transform-origin: center center;
-      position: relative;
     }
 
     .placeholder {
@@ -164,7 +164,6 @@
       transition: bottom 0.3s ease;
     }
 
-    /* POSICIONAMENTO RENTE À BORDA DOURADA */
     .card-feed .hashtag-outline,
     .card-feed .hashtag {
       bottom: 18.5%;
@@ -443,10 +442,12 @@
       );
     }
 
+    // ZOOM PADRÃO INICIAL AUTOMÁTICO EM 1.4 (140%)
+    const DEFAULT_ZOOM = 1.4;
+
     function App() {
       const [photoUrl, setPhotoUrl] = useState(null);
-      // Padrão pré-definido perfeito de Zoom (1.0 = preenchimento total automático no círculo)
-      const [scale, setScale] = useState(1.0);
+      const [scale, setScale] = useState(DEFAULT_ZOOM);
       const [posX, setPosX] = useState(50);
       const [posY, setPosY] = useState(50);
       const [previewMode, setPreviewMode] = useState('feed');
@@ -464,8 +465,6 @@
 
         setError(null);
         setProcessing(true);
-
-        var MAX_SIDE = 2560;
 
         function isProbablyHeic(f) {
           var t = (f.type || '').toLowerCase();
@@ -497,174 +496,33 @@
           var testImg = new Image();
           testImg.onload = function() {
             setPhotoUrl(dataUrl);
-            setScale(1.0);
+            setScale(DEFAULT_ZOOM); // Aplica zoom automático de 140% no upload
             setPosX(50);
             setPosY(50);
             setProcessing(false);
             setError(null);
           };
           testImg.onerror = function() {
-            try {
-              var blobUrl = URL.createObjectURL(file);
-              var test2 = new Image();
-              test2.onload = function() {
-                setPhotoUrl(blobUrl);
-                setScale(1.0);
-                setPosX(50);
-                setPosY(50);
-                setProcessing(false);
-                setError(null);
-              };
-              test2.onerror = function() {
-                URL.revokeObjectURL(blobUrl);
-                setProcessing(false);
-                setError('Este formato não é suportado neste aparelho. Salve como JPG na galeria e tente de novo.');
-              };
-              test2.src = blobUrl;
-            } catch (e2) {
-              setProcessing(false);
-              setError('Não foi possível usar esta foto. Tente JPG ou PNG.');
-            }
+            setProcessing(false);
+            setError('Falha ao renderizar imagem.');
           };
           testImg.src = dataUrl;
         }
 
-        function drawToJpeg(source, srcW, srcH) {
-          var w = srcW || source.naturalWidth || source.width || source.videoWidth;
-          var h = srcH || source.naturalHeight || source.height || source.videoHeight;
-          if (!w || !h) throw new Error('no-dimensions');
-
-          var aspect = w / h;
-          var tw = w, th = h;
-
-          if (tw > MAX_SIDE || th > MAX_SIDE) {
-            if (aspect > 1) {
-              tw = MAX_SIDE;
-              th = Math.round(MAX_SIDE / aspect);
-            } else {
-              th = MAX_SIDE;
-              tw = Math.round(MAX_SIDE * aspect);
-            }
-          }
-
-          var canvas = document.createElement('canvas');
-          canvas.width = tw;
-          canvas.height = th;
-          var ctx = canvas.getContext('2d', { alpha: false });
-          if (!ctx) throw new Error('no-ctx');
-          
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, tw, th);
-          ctx.imageSmoothingEnabled = true;
-          try { ctx.imageSmoothingQuality = 'high'; } catch (e) {}
-
-          ctx.drawImage(source, 0, 0, w, h, 0, 0, tw, th);
-
-          var out = canvas.toDataURL('image/jpeg', 0.98);
-          if (!out || out.length < 50) throw new Error('empty-dataurl');
-          return out;
-        }
-
-        function fromBlobUrl() {
-          return new Promise(function(resolve, reject) {
-            var url = URL.createObjectURL(file);
-            var img = new Image();
-            var done = false;
-            var timer = setTimeout(function() {
-              if (done) return;
-              done = true;
-              URL.revokeObjectURL(url);
-              reject(new Error('timeout-blob'));
-            }, 12000);
-            img.onload = function() {
-              if (done) return;
-              done = true;
-              clearTimeout(timer);
-              try {
-                var jpeg = drawToJpeg(img);
-                URL.revokeObjectURL(url);
-                resolve(jpeg);
-              } catch (err) {
-                resolve(url);
-              }
-            };
-            img.onerror = function() {
-              if (done) return;
-              done = true;
-              clearTimeout(timer);
-              URL.revokeObjectURL(url);
-              reject(new Error('blob-decode'));
-            };
-            img.src = url;
-          });
-        }
-
-        function fromFileReader() {
-          return new Promise(function(resolve, reject) {
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-              var data = ev.target.result;
-              var img = new Image();
-              img.onload = function() {
-                try {
-                  resolve(drawToJpeg(img));
-                } catch (err) {
-                  resolve(data);
-                }
-              };
-              img.onerror = function() {
-                resolve(data);
-              };
-              img.src = data;
-            };
-            reader.onerror = function() { reject(new Error('filereader')); };
-            try {
-              reader.readAsDataURL(file);
-            } catch (err) {
-              reject(err);
-            }
-          });
-        }
-
-        function fromBitmap() {
-          if (typeof createImageBitmap !== 'function') {
-            return Promise.reject(new Error('no-bitmap'));
-          }
-          return createImageBitmap(file)
-            .then(function(bmp) {
-              try {
-                var jpeg = drawToJpeg(bmp, bmp.width, bmp.height);
-                if (bmp.close) bmp.close();
-                return jpeg;
-              } catch (err) {
-                if (bmp.close) bmp.close();
-                throw err;
-              }
-            });
-        }
-
         ensureDecodableFile(file).then(function(decodedFile) {
-          file = decodedFile;
-          return fromFileReader()
-            .catch(function() { return fromBlobUrl(); })
-            .catch(function() { return fromBitmap(); });
-        })
-          .then(function(result) { applyPhoto(result); })
-          .catch(function(err) {
-            console.error('upload fail', err);
-            try {
-              var raw = URL.createObjectURL(file);
-              setPhotoUrl(raw);
-              setScale(1.0);
-              setPosX(50);
-              setPosY(50);
-              setProcessing(false);
-              setError(null);
-            } catch (e3) {
-              setProcessing(false);
-              setError('Falha ao carregar a foto. Tente outro arquivo (JPG/PNG).');
-            }
-          });
+          var reader = new FileReader();
+          reader.onload = function(ev) {
+            applyPhoto(ev.target.result);
+          };
+          reader.onerror = function() {
+            setProcessing(false);
+            setError('Erro ao ler arquivo de foto.');
+          };
+          reader.readAsDataURL(decodedFile);
+        }).catch(function() {
+          setProcessing(false);
+          setError('Não foi possível processar a foto.');
+        });
       };
 
       const handleDownload = useCallback(async function(mode) {
@@ -729,13 +587,12 @@
 
       const resetPhoto = function() {
         setPhotoUrl(null);
-        setScale(1.0);
+        setScale(DEFAULT_ZOOM);
         setPosX(50);
         setPosY(50);
         if (fileInputRef.current) fileInputRef.current.value = '';
       };
 
-      // Cálculo de translação mantendo a foto centralizada e cobrindo o círculo
       var shiftX = (posX - 50) * 1.2;
       var shiftY = (posY - 50) * 1.2;
 

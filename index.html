@@ -40,6 +40,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
@@ -525,176 +526,219 @@
       const fileInputRef = useRef(null);
 
       const handleFileChange = function(e) {
-        const file = e.target.files && e.target.files[0];
-        // permite selecionar a mesma foto de novo depois
-        if (e.target) e.target.value = '';
+        var inputEl = e.target;
+        var file = inputEl.files && inputEl.files[0];
+        // limpa para poder reescolher a mesma foto
+        try { inputEl.value = ''; } catch (err) {}
         if (!file) return;
 
-        var name = (file.name || '').toLowerCase();
-        var type = (file.type || '').toLowerCase();
-        var okType =
-          type.indexOf('image/') === 0 ||
-          type === '' ||
-          type === 'application/octet-stream' ||
-          /\.(jpe?g|png|gif|webp|bmp|heic|heif|tif{1,2}|avif|svg)$/i.test(name);
-        if (!okType) {
-          setError('Formato não suportado. Use JPG, PNG, WEBP ou HEIC.');
-          return;
-        }
-
-        // Aviso amigável para arquivos muito grandes (ainda tenta processar)
-        if (file.size > 25 * 1024 * 1024) {
-          setError('Foto muito grande (máx. recomendado 25 MB). Comprimindo…');
-        } else {
-          setError(null);
-        }
+        setError(null);
         setProcessing(true);
 
-        var MAX_SIDE = 1400; // seguro p/ iOS Safari (limite de canvas)
+        var MAX_SIDE = 1200;
 
-        function finishOk(dataUrl) {
-          setPhotoUrl(dataUrl);
-          setScale(1.15);
-          setPosX(50);
-          setPosY(38);
-          setProcessing(false);
-          setError(null);
+        function isProbablyHeic(f) {
+          var t = (f.type || '').toLowerCase();
+          var n = (f.name || '').toLowerCase();
+          return t.indexOf('heic') >= 0 || t.indexOf('heif') >= 0 || /\.heic$|\.heif$/i.test(n);
         }
 
-        function finishErr(msg) {
-          console.error(msg);
-          setProcessing(false);
-          setError(msg || 'Não foi possível usar esta foto. Tente outra ou salve como JPG.');
+        function ensureDecodableFile(f) {
+          if (!isProbablyHeic(f) || typeof heic2any === 'undefined') {
+            return Promise.resolve(f);
+          }
+          return heic2any({ blob: f, toType: 'image/jpeg', quality: 0.9 })
+            .then(function(result) {
+              var blob = Array.isArray(result) ? result[0] : result;
+              return new File([blob], (f.name || 'foto').replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), { type: 'image/jpeg' });
+            })
+            .catch(function(err) {
+              console.warn('heic2any fail', err);
+              return f;
+            });
         }
 
-        function canvasFromImageSource(source, srcW, srcH) {
-          var w = srcW || source.naturalWidth || source.width;
-          var h = srcH || source.naturalHeight || source.height;
-          if (!w || !h) throw new Error('Dimensões inválidas');
+        function applyPhoto(dataUrl) {
+          if (!dataUrl) {
+            setProcessing(false);
+            setError('Não foi possível carregar esta foto. Tente outra.');
+            return;
+          }
+          // testa se o browser consegue EXIBIR a imagem antes de fixar no estado
+          var testImg = new Image();
+          testImg.onload = function() {
+            setPhotoUrl(dataUrl);
+            setScale(1.1);
+            setPosX(50);
+            setPosY(40);
+            setProcessing(false);
+            setError(null);
+          };
+          testImg.onerror = function() {
+            // dataURL inválido para <img> — tenta blob URL direto do arquivo
+            try {
+              var blobUrl = URL.createObjectURL(file);
+              var test2 = new Image();
+              test2.onload = function() {
+                setPhotoUrl(blobUrl);
+                setScale(1.1);
+                setPosX(50);
+                setPosY(40);
+                setProcessing(false);
+                setError(null);
+              };
+              test2.onerror = function() {
+                URL.revokeObjectURL(blobUrl);
+                setProcessing(false);
+                setError('Este formato não é suportado neste aparelho. Salve como JPG na galeria e tente de novo.');
+              };
+              test2.src = blobUrl;
+            } catch (e2) {
+              setProcessing(false);
+              setError('Não foi possível usar esta foto. Tente JPG ou PNG.');
+            }
+          };
+          testImg.src = dataUrl;
+        }
 
-          // Reduz em passos (evita estouro de memória no mobile)
+        function drawToJpeg(source, srcW, srcH) {
+          var w = srcW || source.naturalWidth || source.width || source.videoWidth;
+          var h = srcH || source.naturalHeight || source.height || source.videoHeight;
+          if (!w || !h) throw new Error('no-dimensions');
+
+          // reduz em passos (mobile)
           var tw = w, th = h;
-          while (tw > MAX_SIDE * 2 || th > MAX_SIDE * 2) {
-            tw = Math.round(tw / 2);
-            th = Math.round(th / 2);
+          var steps = 0;
+          while ((tw > MAX_SIDE * 2 || th > MAX_SIDE * 2) && steps < 6) {
+            tw = Math.max(1, Math.round(tw / 2));
+            th = Math.max(1, Math.round(th / 2));
+            steps++;
           }
           if (tw > MAX_SIDE || th > MAX_SIDE) {
-            var s = MAX_SIDE / Math.max(tw, th);
-            tw = Math.round(tw * s);
-            th = Math.round(th * s);
+            var sc = MAX_SIDE / Math.max(tw, th);
+            tw = Math.max(1, Math.round(tw * sc));
+            th = Math.max(1, Math.round(th * sc));
           }
-          tw = Math.max(1, tw);
-          th = Math.max(1, th);
 
           var canvas = document.createElement('canvas');
           canvas.width = tw;
           canvas.height = th;
-          var ctx = canvas.getContext('2d');
-          if (!ctx) throw new Error('Canvas indisponível');
+          var ctx = canvas.getContext('2d', { alpha: false });
+          if (!ctx) throw new Error('no-ctx');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, tw, th);
           ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
+          try { ctx.imageSmoothingQuality = 'high'; } catch (e) {}
           ctx.drawImage(source, 0, 0, tw, th);
 
-          // JPEG com qualidade adaptativa
-          var q = 0.88;
-          if (file.size > 8 * 1024 * 1024) q = 0.8;
-          if (file.size > 15 * 1024 * 1024) q = 0.72;
-
-          var dataUrl;
-          try {
-            dataUrl = canvas.toDataURL('image/jpeg', q);
-          } catch (e1) {
-            // fallback sem qualidade / png menor
-            canvas.width = Math.min(tw, 1000);
-            canvas.height = Math.min(th, 1000);
-            ctx = canvas.getContext('2d');
-            ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-            dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-          }
-          if (!dataUrl || dataUrl.length < 100) throw new Error('Falha ao gerar preview');
-          return dataUrl;
+          var q = file.size > 10 * 1024 * 1024 ? 0.75 : 0.85;
+          var out = canvas.toDataURL('image/jpeg', q);
+          if (!out || out.length < 50) throw new Error('empty-dataurl');
+          return out;
         }
 
-        function loadViaObjectURL() {
+        function fromBlobUrl() {
           return new Promise(function(resolve, reject) {
             var url = URL.createObjectURL(file);
             var img = new Image();
-            // ajuda em alguns Android
-            img.decoding = 'async';
+            var done = false;
+            var timer = setTimeout(function() {
+              if (done) return;
+              done = true;
+              URL.revokeObjectURL(url);
+              reject(new Error('timeout-blob'));
+            }, 12000);
             img.onload = function() {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
               try {
-                var dataUrl = canvasFromImageSource(img);
+                var jpeg = drawToJpeg(img);
                 URL.revokeObjectURL(url);
-                resolve(dataUrl);
+                resolve(jpeg);
               } catch (err) {
-                URL.revokeObjectURL(url);
-                reject(err);
+                // se canvas falhar, usa o blob URL direto (ainda mostra a foto)
+                resolve(url);
               }
             };
             img.onerror = function() {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
               URL.revokeObjectURL(url);
-              reject(new Error('decode-object-url'));
+              reject(new Error('blob-decode'));
             };
             img.src = url;
           });
         }
 
-        function loadViaFileReader() {
+        function fromFileReader() {
           return new Promise(function(resolve, reject) {
             var reader = new FileReader();
             reader.onload = function(ev) {
+              var data = ev.target.result;
               var img = new Image();
               img.onload = function() {
                 try {
-                  resolve(canvasFromImageSource(img));
+                  resolve(drawToJpeg(img));
                 } catch (err) {
-                  // último recurso: usa dataURL cru (pode falhar em HEIC no <img>)
-                  resolve(ev.target.result);
+                  resolve(data); // usa dataURL original
                 }
               };
               img.onerror = function() {
-                // se o browser não decodifica (ex: HEIC), tenta usar o dataURL mesmo assim
-                if (ev.target && ev.target.result) {
-                  resolve(ev.target.result);
-                } else {
-                  reject(new Error('decode-filereader'));
-                }
+                // não decodificou no Image, mas dataURL pode funcionar em alguns casos
+                resolve(data);
               };
-              img.src = ev.target.result;
+              img.src = data;
             };
-            reader.onerror = function() { reject(new Error('read-failed')); };
-            reader.readAsDataURL(file);
-          });
-        }
-
-        function loadViaCreateImageBitmap() {
-          if (typeof createImageBitmap !== 'function') {
-            return Promise.reject(new Error('no-bitmap'));
-          }
-          // redimensiona na criação quando suportado
-          var opts = { resizeWidth: MAX_SIDE, resizeHeight: MAX_SIDE, resizeQuality: 'high' };
-          return createImageBitmap(file).then(function(bitmap) {
+            reader.onerror = function() { reject(new Error('filereader')); };
             try {
-              var dataUrl = canvasFromImageSource(bitmap, bitmap.width, bitmap.height);
-              if (bitmap.close) bitmap.close();
-              return dataUrl;
+              reader.readAsDataURL(file);
             } catch (err) {
-              if (bitmap.close) bitmap.close();
-              throw err;
+              reject(err);
             }
           });
         }
 
-        // Cadeia de fallbacks: bitmap → objectURL → FileReader
-        loadViaCreateImageBitmap()
-          .catch(function() { return loadViaObjectURL(); })
-          .catch(function() { return loadViaFileReader(); })
-          .then(function(dataUrl) {
-            finishOk(dataUrl);
-          })
+        function fromBitmap() {
+          if (typeof createImageBitmap !== 'function') {
+            return Promise.reject(new Error('no-bitmap'));
+          }
+          return createImageBitmap(file)
+            .then(function(bmp) {
+              try {
+                var jpeg = drawToJpeg(bmp, bmp.width, bmp.height);
+                if (bmp.close) bmp.close();
+                return jpeg;
+              } catch (err) {
+                if (bmp.close) bmp.close();
+                throw err;
+              }
+            });
+        }
+
+        // Converte HEIC se preciso, depois decodifica (ignora extensão falsa)
+        ensureDecodableFile(file).then(function(decodedFile) {
+          file = decodedFile;
+          return fromFileReader()
+            .catch(function() { return fromBlobUrl(); })
+            .catch(function() { return fromBitmap(); });
+        })
+          .then(function(result) { applyPhoto(result); })
           .catch(function(err) {
-            console.error(err);
-            finishErr('Esta foto não pôde ser processada neste aparelho. Tente outra ou converta para JPG.');
+            console.error('upload fail', err);
+            try {
+              var raw = URL.createObjectURL(file);
+              setPhotoUrl(raw);
+              setScale(1.1);
+              setPosX(50);
+              setPosY(40);
+              setProcessing(false);
+              setError(null);
+            } catch (e3) {
+              setProcessing(false);
+              setError('Falha ao carregar a foto. Tente outro arquivo (JPG/PNG).');
+            }
           });
       };
 
@@ -720,23 +764,25 @@
           await new Promise(function(r) { setTimeout(r, 100); });
 
           var card = cardRef.current;
+          // Escala alta: story precisa de mais resolução (card mais estreito na tela)
+          var captureScale = mode === 'story' ? 7 : 5;
           var sourceCanvas = await html2canvas(card, {
-            scale: 4,
+            scale: captureScale,
             useCORS: true,
             allowTaint: true,
             backgroundColor: '#0a1628',
             logging: false,
-            imageTimeout: 45000,
+            imageTimeout: 60000,
             ignoreElements: function(el) {
               return el.classList && el.classList.contains('exporting-overlay');
             }
           });
 
-          // Instagram oficiais:
-          // Story 9:16 = 1080x1920 | Feed retrato 4:5 = 1080x1350
+          // Instagram: Story 9:16 | Feed 4:5
+          // Story exporta em 2x (2160x3840) para nitidez máxima ao comprimir no IG
           var targetW, targetH, fileSuffix;
           if (mode === 'story') {
-            targetW = 1080; targetH = 1920; fileSuffix = 'story';
+            targetW = 2160; targetH = 3840; fileSuffix = 'story';
           } else {
             targetW = 1080; targetH = 1350; fileSuffix = 'feed';
           }
@@ -745,15 +791,12 @@
           out.width = targetW;
           out.height = targetH;
           var ctx = out.getContext('2d');
-          // Fundo azul do evento
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.fillStyle = '#0a1628';
           ctx.fillRect(0, 0, targetW, targetH);
 
-          var sw = sourceCanvas.width, sh = sourceCanvas.height;
-          var dw, dh, dx, dy;
-
-          // Card já está na proporção certa do modo → preenche o canvas de saída
-          // Story: 9:16 exato com moldura dedicada | Feed: 4:5
+          // Redimensiona a captura em alta qualidade para o tamanho final
           ctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
 
           var link = document.createElement('a');
@@ -781,9 +824,21 @@
       var photoContent;
       if (photoUrl) {
         photoContent = h('img', {
-          src: photoUrl, alt: 'Sua foto', className: 'photo-img',
-          style: { transform: 'scale(' + scale + ')', WebkitTransform: 'scale(' + scale + ')', objectPosition: posX + '% ' + posY + '%', objectFit: 'cover' },
-          draggable: false
+          src: photoUrl,
+          alt: 'Sua foto',
+          className: 'photo-img',
+          style: {
+            transform: 'scale(' + scale + ')',
+            WebkitTransform: 'scale(' + scale + ')',
+            objectPosition: posX + '% ' + posY + '%',
+            objectFit: 'cover',
+            width: '100%',
+            height: '100%'
+          },
+          draggable: false,
+          onError: function() {
+            setError('A foto foi lida, mas não pôde ser exibida. Tente salvar como JPG e enviar de novo.');
+          }
         });
       } else if (processing) {
         photoContent = h('div', { className: 'placeholder' },
@@ -839,12 +894,12 @@
             style: {
               aspectRatio: previewMode === 'story' ? '9 / 16' : '1199 / 1500',
               backgroundImage: previewMode === 'story'
-                ? "url('background-story.jpg')"
+                ? "url('background-story-1080.jpg')"
                 : "url('background.jpg')"
             }
           },
             h('img', {
-              src: previewMode === 'story' ? 'background-story.jpg' : 'background.jpg',
+              src: previewMode === 'story' ? 'background-story-1080.jpg' : 'background.jpg',
               alt: '',
               className: 'bg-image',
               draggable: false,
@@ -858,9 +913,9 @@
               role: photoUrl ? 'img' : 'button',
               'aria-label': photoUrl ? 'Área da foto' : 'Toque para enviar sua foto',
               style: previewMode === 'story' ? {
-                top: '26%',
-                width: '68%',
-                left: '16%'
+                top: '24%',
+                width: '66%',
+                left: '17%'
               } : undefined
             },
               photoContent,
@@ -874,11 +929,15 @@
             h('div', {
               className: 'hashtag-outline',
               'aria-hidden': 'true',
-              style: previewMode === 'story' ? { bottom: '18%' } : undefined
+              style: previewMode === 'story'
+                ? { bottom: '30%', fontSize: 'clamp(36px, 12vw, 58px)', zIndex: 35 }
+                : undefined
             }, '#EUVOU'),
             h('div', {
               className: 'hashtag',
-              style: previewMode === 'story' ? { bottom: '18%' } : undefined
+              style: previewMode === 'story'
+                ? { bottom: '30%', fontSize: 'clamp(36px, 12vw, 58px)', zIndex: 36 }
+                : undefined
             }, '#EUVOU'),
                         exporting ? h('div', { className: 'exporting-overlay' },
               h('div', null, h('div', { className: 'spinner' }), h('p', null, 'Gerando seu post...'))
@@ -931,7 +990,7 @@
           )
         ),
         h('input', {
-          ref: fileInputRef, id: 'photo-upload-input', type: 'file', accept: 'image/*,image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif',
+          ref: fileInputRef, id: 'photo-upload-input', type: 'file', accept: 'image/*,*/*',
           className: 'hidden-input', onChange: handleFileChange
         })
       );

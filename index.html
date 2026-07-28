@@ -64,7 +64,7 @@
       border-radius: 6px;
       overflow: hidden;
       background-color: #0a1628;
-      background-size: cover;
+      background-size: 100% 100%;
       background-position: center center;
       background-repeat: no-repeat;
     }
@@ -73,7 +73,7 @@
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: fill;
       pointer-events: none;
       user-select: none;
       z-index: 1;
@@ -114,16 +114,26 @@
         inset 0 0 10px rgba(0,0,0,0.2);
     }
     
-    /* IMAGEM COMPLETA SEM CORTE INICIAL (CONTAIN) */
-    .user-photo-img {
+    /* CAIXA DE RENDERIZAÇÃO DA IMAGEM SEM ACHATAR */
+    .photo-wrapper {
       width: 100%;
       height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .user-photo-img {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
       object-fit: contain;
-      object-position: center center;
       display: block;
       pointer-events: none;
       user-select: none;
-      image-rendering: -webkit-optimize-contrast;
       transform-origin: center center;
     }
 
@@ -201,7 +211,7 @@
     .exporting-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(6, 16, 31, 0.82);
+      background: rgba(6, 16, 31, 0.88);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -442,7 +452,6 @@
       );
     }
 
-    // ZOOM INICIAL EM 1.0 PARA MOSTRAR A IMAGEM INTEIRA SEM CORTE
     const DEFAULT_ZOOM = 1.0;
 
     function App() {
@@ -537,15 +546,12 @@
         setError(null);
 
         try {
-          await new Promise(function(r) { setTimeout(r, 250); });
-          var overlay = cardRef.current && cardRef.current.querySelector('.exporting-overlay');
-          if (overlay) overlay.style.display = 'none';
-          await new Promise(function(r) { setTimeout(r, 100); });
-
+          await new Promise(function(r) { setTimeout(r, 200); });
           var card = cardRef.current;
           
+          // Renderiza direto em altíssima densidade gráfica de pixels sem re-amostragem
           var sourceCanvas = await html2canvas(card, {
-            scale: 4,
+            scale: 3.2,
             useCORS: true,
             allowTaint: true,
             backgroundColor: '#0a1628',
@@ -556,24 +562,10 @@
             }
           });
 
-          var targetW = 1080;
-          var targetH = mode === 'story' ? 1920 : 1350;
           var fileSuffix = mode === 'story' ? 'story' : 'feed';
-
-          var out = document.createElement('canvas');
-          out.width = targetW;
-          out.height = targetH;
-          var ctx = out.getContext('2d');
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.fillStyle = '#0a1628';
-          ctx.fillRect(0, 0, targetW, targetH);
-
-          ctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
-
           var link = document.createElement('a');
           link.download = 'meu-post-seminario-penal-' + fileSuffix + '.png';
-          link.href = out.toDataURL('image/png', 1.0);
+          link.href = sourceCanvas.toDataURL('image/png', 1.0);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -598,15 +590,17 @@
 
       var photoContent;
       if (photoUrl) {
-        photoContent = h('img', {
-          src: photoUrl,
-          alt: 'Foto do participante',
-          className: 'user-photo-img',
-          style: {
-            transform: 'translate(' + shiftX + '%, ' + shiftY + '%) scale(' + scale + ')',
-            WebkitTransform: 'translate(' + shiftX + '%, ' + shiftY + '%) scale(' + scale + ')'
-          }
-        });
+        photoContent = h('div', { className: 'photo-wrapper' },
+          h('img', {
+            src: photoUrl,
+            alt: 'Foto do participante',
+            className: 'user-photo-img',
+            style: {
+              transform: 'translate(' + shiftX + '%, ' + shiftY + '%) scale(' + scale + ')',
+              WebkitTransform: 'translate(' + shiftX + '%, ' + shiftY + '%) scale(' + scale + ')'
+            }
+          })
+        );
       } else if (processing) {
         photoContent = h('div', { className: 'placeholder' },
           h('div', { className: 'spinner', style: { width: '36px', height: '36px', marginBottom: '8px' } }),
@@ -691,7 +685,7 @@
 
             exporting ? h('div', { className: 'exporting-overlay' },
               h('div', { className: 'spinner' }),
-              h('p', null, 'Gerando imagem em alta qualidade...')
+              h('p', null, 'Gerando imagem em alta resolução...')
             ) : null
           )
         ),

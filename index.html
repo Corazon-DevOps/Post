@@ -114,11 +114,11 @@
         inset 0 0 10px rgba(0,0,0,0.2);
     }
     
-    /* IMAGEM ORIGINAL PRESERVADA COM OBJECT-FIT COVER */
+    /* IMAGEM COMPLETA SEM CORTE INICIAL (CONTAIN) */
     .user-photo-img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       object-position: center center;
       display: block;
       pointer-events: none;
@@ -442,8 +442,8 @@
       );
     }
 
-    // ZOOM PADRÃO INICIAL AUTOMÁTICO EM 1.4 (140%)
-    const DEFAULT_ZOOM = 1.4;
+    // ZOOM INICIAL EM 1.0 PARA MOSTRAR A IMAGEM INTEIRA SEM CORTE
+    const DEFAULT_ZOOM = 1.0;
 
     function App() {
       const [photoUrl, setPhotoUrl] = useState(null);
@@ -496,7 +496,7 @@
           var testImg = new Image();
           testImg.onload = function() {
             setPhotoUrl(dataUrl);
-            setScale(DEFAULT_ZOOM); // Aplica zoom automático de 140% no upload
+            setScale(DEFAULT_ZOOM);
             setPosX(50);
             setPosY(50);
             setProcessing(false);
@@ -593,8 +593,8 @@
         if (fileInputRef.current) fileInputRef.current.value = '';
       };
 
-      var shiftX = (posX - 50) * 1.2;
-      var shiftY = (posY - 50) * 1.2;
+      var shiftX = (posX - 50) * 1.5;
+      var shiftY = (posY - 50) * 1.5;
 
       var photoContent;
       if (photoUrl) {
@@ -625,7 +625,7 @@
           h('p', { className: 'adjust-title' }, 'Ajuste Fino (Opcional)'),
           h('div', { className: 'slider-row' },
             h('label', null, h('span', null, 'Zoom'), h('span', null, Math.round(scale * 100) + '%')),
-            h('input', { type: 'range', min: '0.8', max: '2.5', step: '0.05', value: scale,
+            h('input', { type: 'range', min: '0.5', max: '3.0', step: '0.05', value: scale,
               onChange: function(e) { setScale(parseFloat(e.target.value)); } })
           ),
           h('div', { className: 'slider-row' },

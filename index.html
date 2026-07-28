@@ -364,6 +364,25 @@
       transform: none;
     }
     .btn-primary svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .btn-story {
+      background: linear-gradient(135deg, #c084fc 0%, #a855f7 45%, #7c3aed 100%);
+      box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4);
+    }
+    .btn-story:hover:not(:disabled) {
+      box-shadow: 0 8px 22px rgba(168, 85, 247, 0.55);
+    }
+    .btn-row-modes {
+      flex-direction: column;
+    }
+    @media (min-width: 480px) {
+      .btn-row-modes { flex-direction: row; }
+    }
+    .photo-img {
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      backface-visibility: hidden;
+      max-width: none;
+    }
     .btn-secondary {
       display: flex;
       align-items: center;
@@ -469,6 +488,7 @@
       const [posX, setPosX] = useState(50);
       const [posY, setPosY] = useState(38);
       const [exporting, setExporting] = useState(false);
+      const [processing, setProcessing] = useState(false);
       const [error, setError] = useState(null);
       const cardRef = useRef(null);
       const fileInputRef = useRef(null);
@@ -476,7 +496,6 @@
       const handleFileChange = function(e) {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
-        // Mobile: alguns Android/iOS mandam type vazio ou image/heic
         var okType = !file.type || file.type.startsWith('image/') ||
           /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(file.name || '');
         if (!okType) {
@@ -484,47 +503,91 @@
           return;
         }
         setError(null);
-        const reader = new FileReader();
-        reader.onload = function(ev) {
-          setPhotoUrl(ev.target.result);
-          setScale(1.15);
-          setPosX(50);
-          setPosY(38);
+        setProcessing(true);
+
+        // Pipeline via canvas: corrige iOS (orientação EXIF), HEIC parcial e fotos grandes no mobile
+        var objectUrl = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function() {
+          try {
+            var maxSide = 1600;
+            var w = img.naturalWidth || img.width;
+            var h = img.naturalHeight || img.height;
+            if (!w || !h) {
+              setError('Não foi possível carregar a imagem. Tente JPG ou PNG.');
+              setProcessing(false);
+              URL.revokeObjectURL(objectUrl);
+              return;
+            }
+            var scaleImg = 1;
+            if (w > maxSide || h > maxSide) {
+              scaleImg = maxSide / Math.max(w, h);
+            }
+            var cw = Math.round(w * scaleImg);
+            var ch = Math.round(h * scaleImg);
+            var canvas = document.createElement('canvas');
+            canvas.width = cw;
+            canvas.height = ch;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, cw, ch);
+            var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+            setPhotoUrl(dataUrl);
+            setScale(1.15);
+            setPosX(50);
+            setPosY(38);
+            setProcessing(false);
+          } catch (err) {
+            console.error(err);
+            setError('Erro ao processar a foto. Tente outra imagem (JPG/PNG).');
+            setProcessing(false);
+          }
+          URL.revokeObjectURL(objectUrl);
         };
-        reader.onerror = function() {
-          setError('Não foi possível ler a imagem. Tente outra foto.');
+        img.onerror = function() {
+          URL.revokeObjectURL(objectUrl);
+          // Fallback FileReader (alguns browsers)
+          var reader = new FileReader();
+          reader.onload = function(ev) {
+            setPhotoUrl(ev.target.result);
+            setScale(1.15);
+            setPosX(50);
+            setPosY(38);
+            setProcessing(false);
+          };
+          reader.onerror = function() {
+            setError('Não foi possível ler a imagem neste celular. Salve como JPG e tente de novo.');
+            setProcessing(false);
+          };
+          reader.readAsDataURL(file);
         };
-        reader.readAsDataURL(file);
+        img.src = objectUrl;
       };
 
       const triggerUpload = function() {
         if (fileInputRef.current) fileInputRef.current.click();
       };
 
-      const handleDownload = useCallback(async function() {
+      const handleDownload = useCallback(async function(mode) {
         if (!photoUrl) {
           setError('Envie sua foto primeiro para gerar o post!');
           return;
         }
         if (!cardRef.current) return;
+        mode = mode || 'feed';
         setExporting(true);
         setError(null);
         try {
-          // Wait for React to paint the overlay, then hide it from the card before capture
           await new Promise(function(r) { setTimeout(r, 50); });
           var overlay = cardRef.current && cardRef.current.querySelector('.exporting-overlay');
-          if (overlay) {
-            overlay.style.display = 'none';
-          }
-          await new Promise(function(r) { setTimeout(r, 50); });
+          if (overlay) overlay.style.display = 'none';
+          await new Promise(function(r) { setTimeout(r, 80); });
+
           var card = cardRef.current;
-          // Alta definição: scale 5 × largura do card (~420px) ≈ 2100px de largura
-          // Proporção retrato ~ 2100 × 2625 px — excelente para Instagram/Feed
-          const canvas = await html2canvas(card, {
-            scale: 5,
+          var sourceCanvas = await html2canvas(card, {
+            scale: 4,
             useCORS: true,
             allowTaint: true,
-            backgroundColor: null,
+            backgroundColor: '#0a1628',
             logging: false,
             imageTimeout: 45000,
             ignoreElements: function(el) {
@@ -532,9 +595,31 @@
             }
           });
 
-          const link = document.createElement('a');
-          link.download = 'meu-post-seminario-penal.png';
-          link.href = canvas.toDataURL('image/png', 1.0);
+          // Instagram oficiais:
+          // Story 9:16 = 1080x1920 | Feed retrato 4:5 = 1080x1350
+          var targetW, targetH, fileSuffix;
+          if (mode === 'story') {
+            targetW = 1080; targetH = 1920; fileSuffix = 'story';
+          } else {
+            targetW = 1080; targetH = 1350; fileSuffix = 'feed';
+          }
+
+          var out = document.createElement('canvas');
+          out.width = targetW;
+          out.height = targetH;
+          var ctx = out.getContext('2d');
+          ctx.fillStyle = '#0a1628';
+          ctx.fillRect(0, 0, targetW, targetH);
+
+          var sw = sourceCanvas.width, sh = sourceCanvas.height;
+          var scaleCover = Math.max(targetW / sw, targetH / sh);
+          var dw = sw * scaleCover, dh = sh * scaleCover;
+          var dx = (targetW - dw) / 2, dy = (targetH - dh) / 2;
+          ctx.drawImage(sourceCanvas, dx, dy, dw, dh);
+
+          var link = document.createElement('a');
+          link.download = 'meu-post-seminario-penal-' + fileSuffix + '.png';
+          link.href = out.toDataURL('image/png', 1.0);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -558,13 +643,18 @@
       if (photoUrl) {
         photoContent = h('img', {
           src: photoUrl, alt: 'Sua foto', className: 'photo-img',
-          style: { transform: 'scale(' + scale + ')', objectPosition: posX + '% ' + posY + '%' },
+          style: { transform: 'scale(' + scale + ')', WebkitTransform: 'scale(' + scale + ')', objectPosition: posX + '% ' + posY + '%', objectFit: 'cover' },
           draggable: false
         });
+      } else if (processing) {
+        photoContent = h('div', { className: 'placeholder' },
+          h('div', { className: 'spinner', style: { width: '36px', height: '36px', marginBottom: '8px' } }),
+          h('span', null, 'Processando foto...')
+        );
       } else {
         photoContent = h('div', { className: 'placeholder' },
           h(CameraIcon),
-          h('span', null, 'Clique aqui para', h('br'), 'enviar sua foto')
+          h('span', null, 'Toque aqui para', h('br'), 'enviar sua foto')
         );
       }
 
@@ -634,10 +724,21 @@
         h('div', { className: 'controls' },
           error ? h('div', { className: 'error-box' }, error) : null,
           adjustPanel,
+          h('div', { className: 'btn-row btn-row-modes' },
+            h('button', {
+              className: 'btn-primary',
+              type: 'button',
+              onClick: function() { handleDownload('feed'); },
+              disabled: !photoUrl || exporting
+            }, h(DownloadIcon), 'Salvar Feed (4:5)'),
+            h('button', {
+              className: 'btn-primary btn-story',
+              type: 'button',
+              onClick: function() { handleDownload('story'); },
+              disabled: !photoUrl || exporting
+            }, h(DownloadIcon), 'Salvar Story (9:16)')
+          ),
           h('div', { className: 'btn-row' },
-            h('button', { className: 'btn-primary', onClick: handleDownload, disabled: !photoUrl || exporting },
-              h(DownloadIcon), 'Baixar Meu Post'
-            ),
             secondaryBtn
           ),
           h('p', { className: 'privacy-note' },
